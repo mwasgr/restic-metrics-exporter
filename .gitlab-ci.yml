@@ -1,9 +1,0 @@
-build:
-  image: docker:latest
-  stage: build
-  services:
-    - docker:dind
-  script:
-    - docker login -u mj12helios -p $BUILD_TOKEN registry.gitlab.com
-    - docker build -t registry.gitlab.com/mj12helios-default-group/restic .
-    - docker push registry.gitlab.com/mj12helios-default-group/restic

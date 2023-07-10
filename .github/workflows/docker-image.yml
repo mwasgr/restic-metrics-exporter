@@ -10,9 +10,12 @@ jobs:
 
   build:
 
-    runs-on: alpine-latest
+    runs-on: Ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag restic-metrics-exporter:latest
+      run: |
+        echo ${{ secrets.BUILD_TOKEN }} | docker login -u mwasgr --password-stdin
+        docker build -t mwasgr/restic-metrics-exporter:latest .
+        docker push mwasgr/restic-metrics-exporter:latest    
