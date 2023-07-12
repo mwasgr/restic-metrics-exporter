@@ -16,7 +16,7 @@ const SNAPSHOT_TIME_MINIMUM_METRIC: &str = "snapshot_time_minimum";
 const SNAPSHOT_TIME_MAXIMUM_METRIC: &str = "snapshot_time_maximum";
 
 pub fn start(receiver: Receiver<Vec<SnapshotGroupWithDetails>>) {
-    let listen_address: SocketAddr = "0.0.0.0:9184".parse().expect("");
+    let listen_address: SocketAddr = "0.0.0.0:80".parse().expect("");
     let timeout_in_seconds = 24 * 60 * 60;
     let metrics_timeout = Duration::from_secs(timeout_in_seconds);
     let mask = MetricKindMask::ALL;

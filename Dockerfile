@@ -8,12 +8,13 @@ COPY Cargo.toml .
 
 RUN cargo build -r
 
-FROM alpine:latest
-RUN apk add restic
+FROM debian:latest
+RUN apt-get update
+RUN apt-get -y install restic
 
 WORKDIR /app
-EXPOSE 9184
+EXPOSE 80
 
-COPY --from=build /app/target/release .
+COPY --from=build /app/target/release/restic-metrics-exporter .
 
-ENTRYPOINT ["/app/restic-metrics-exporter"]
+ENTRYPOINT ["./restic-metrics-exporter"]

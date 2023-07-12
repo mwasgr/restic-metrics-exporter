@@ -1,9 +1,16 @@
-use anyhow::{Context, Result};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, ParseError, Utc};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::error::Error;
+use std::fmt;
 use std::process::Command;
+
+#[derive(Debug, Clone)]
+pub struct ResticError {
+    command: String,
+    error_message: String,
+}
 
 #[derive(Serialize, Deserialize)]
 struct JsonSnapshot {
@@ -41,12 +48,20 @@ pub struct SnapshotGroupWithDetails {
     pub count: usize,
 }
 
-pub trait GroupSnapshots {
-    fn to_snapshot_groups(&self) -> Vec<SnapshotGroup>;
+impl fmt::Display for ResticError {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "Restic command '{:?}' failed with error message '{:?}'",
+            self.command, self.error_message
+        )
+    }
 }
 
-pub trait GetSnapshotGroupDetails {
-    fn get_details(&self) -> Result<SnapshotGroupWithDetails>;
+impl Error for ResticError {}
+
+pub trait GroupSnapshots {
+    fn to_snapshot_groups(&self) -> Vec<SnapshotGroup>;
 }
 
 impl GroupSnapshots for Vec<Snapshot> {
@@ -71,8 +86,8 @@ impl GroupSnapshots for Vec<Snapshot> {
     }
 }
 
-impl GetSnapshotGroupDetails for SnapshotGroup {
-    fn get_details(&self) -> Result<SnapshotGroupWithDetails> {
+impl SnapshotGroup {
+    pub fn get_details(&self) -> Result<SnapshotGroupWithDetails, Box<dyn Error>> {
         println!(
             "Getting snapshout group details for host \"{:?}\" and path \"{:?}\".",
             self.host, self.path
@@ -81,23 +96,21 @@ impl GetSnapshotGroupDetails for SnapshotGroup {
             "stats", "--json", "--host", &self.host, "--path", &self.path, "--mode", "raw-data",
         ])?;
         let stats: JsonSnapshotGroupStats = serde_json::from_str(&result)?;
-        let min_time = self
-            .snapshots
-            .iter()
-            .map(|s| s.time)
-            .min()
-            .context("Cannot get minimum")?;
+        let min_time: Result<i64, String> = match self.snapshots.iter().map(|s| s.time).min() {
+            Some(v) => Ok(v),
+            None => Err("Cannot get minimum".into()),
+        };
 
         Ok(SnapshotGroupWithDetails {
             group: self.clone(),
             count: self.snapshots.len(),
             size: stats.total_size,
-            latest_time: min_time,
+            latest_time: min_time?,
         })
     }
 }
 
-pub fn get_all_snapshots() -> Result<Vec<Snapshot>> {
+pub fn get_all_snapshots() -> Result<Vec<Snapshot>, Box<dyn Error>> {
     let result = run_restic(vec!["snapshots", "--json"])?;
     let snapshots: Vec<JsonSnapshot> = serde_json::from_str(&result)?;
     let converted_snapshots = snapshots
@@ -112,14 +125,22 @@ pub fn get_all_snapshots() -> Result<Vec<Snapshot>> {
     Ok(converted_snapshots)
 }
 
-fn run_restic(args: Vec<&str>) -> Result<String> {
+fn run_restic(args: Vec<&str>) -> Result<String, Box<dyn Error>> {
     println!("Executing restic command: {:?}", args);
-    let output = Command::new("restic").args(args).output()?;
-    let result = String::from_utf8_lossy(&output.stdout).to_string();
-    Ok(result)
+    let output = Command::new("restic").args(&args).output()?;
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !stderr.is_empty() {
+        return Err(Box::new(ResticError {
+            command: args.join(" "),
+            error_message: stderr,
+        }));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    Ok(stdout)
 }
 
-fn iso_to_milliseconds(iso_time: &str) -> Result<i64> {
+fn iso_to_milliseconds(iso_time: &str) -> Result<i64, ParseError> {
     let datetime: DateTime<Utc> = DateTime::parse_from_rfc3339(iso_time)?.into();
     let naive_datetime: NaiveDateTime = datetime.naive_utc();
     let timestamp_milliseconds: i64 = naive_datetime.timestamp_millis();
