@@ -1,30 +1,16 @@
-use std::env;
 use std::error::Error;
 use std::sync::mpsc::Sender;
 
 use tokio::time;
 
+use crate::environment::get_environment_variable_or;
 use crate::restic::GroupSnapshots;
 use crate::restic::{self, SnapshotGroupWithDetails};
 
 const UPDATE_INTERVALL_SECONDS: &str = "UPDATE_INTERVALL_SECONDS";
 
 pub async fn start_metric_updates(sender: Sender<Vec<SnapshotGroupWithDetails>>) {
-    let seconds_text = match env::var(UPDATE_INTERVALL_SECONDS) {
-        Ok(v) => v,
-        Err(_) => {
-            println!("No update time defined in environment variable 'UPDATE_INTERVALL_SECONDS'. Using default update intervall of 4 hours.");
-            "14400".to_string()
-        }
-    };
-    let seconds = match seconds_text.parse::<u64>() {
-        Ok(v) => v,
-        Err(_) => {
-            println!("Could not convert {:?} to seconds (only integer values are allowed). Using default update intervall of 4 hours.", seconds_text);
-            14400
-        }
-    };
-
+    let seconds = get_environment_variable_or(UPDATE_INTERVALL_SECONDS, 14400);
     tokio::spawn(handle_metric_update_loop(seconds, sender));
 }
 

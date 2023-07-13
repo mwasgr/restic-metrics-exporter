@@ -2,6 +2,7 @@ use std::sync::mpsc;
 use tokio;
 
 mod async_update;
+mod environment;
 mod restic;
 mod server;
 
