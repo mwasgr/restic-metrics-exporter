@@ -3,6 +3,7 @@ use metrics_exporter_prometheus::PrometheusBuilder;
 use metrics_util::MetricKindMask;
 use std::net::{IpAddr, Ipv4Addr};
 use std::{net::SocketAddr, sync::mpsc::Receiver, time::Duration};
+use tokio::task::JoinHandle;
 
 use crate::environment::get_environment_variable_or;
 use crate::restic::SnapshotGroupWithDetails;
@@ -19,27 +20,13 @@ const SNAPSHOT_TIME_MAXIMUM_METRIC: &str = "snapshot_time_maximum";
 const METRIC_TIMEOUT_SECONDS: &str = "METRIC_TIMEOUT_SECONDS";
 const LISTEN_ADDRESS: &str = "LISTEN_ADDRESS";
 
-pub struct ServerResult {
-    builder: PrometheusBuilder,
+pub fn start(receiver: Receiver<Vec<SnapshotGroupWithDetails>>) {
+    register_metrics();
+    handle_web_server();
+    tokio::spawn(handle_metric_updates(receiver));
 }
 
-pub fn start(receiver: Receiver<Vec<SnapshotGroupWithDetails>>) -> ServerResult {
-    let listen_address = get_environment_variable_or(
-        LISTEN_ADDRESS,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 80),
-    );
-
-    let timeout_in_seconds = get_environment_variable_or(METRIC_TIMEOUT_SECONDS, 24 * 60 * 60);
-
-    let metrics_timeout = Duration::from_secs(timeout_in_seconds);
-    let mask = MetricKindMask::ALL;
-
-    let builder = PrometheusBuilder::new()
-        .with_http_listener(listen_address)
-        .idle_timeout(mask, Some(metrics_timeout));
-
-    builder.install().expect("expect server to be startable");
-
+fn register_metrics() {
     describe_gauge!(
         SNAPSHOT_TIME_METRIC,
         "Contains the last time a snapshot has been created for the given host and path."
@@ -79,12 +66,26 @@ pub fn start(receiver: Receiver<Vec<SnapshotGroupWithDetails>>) -> ServerResult 
         SNAPSHOT_TIME_MAXIMUM_METRIC,
         "Contains maximum (newest) time across all snapshots of all groups."
     );
+}
+
+fn handle_web_server() {
+    let listen_address = get_environment_variable_or(
+        LISTEN_ADDRESS,
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 80),
+    );
+
+    let timeout_in_seconds = get_environment_variable_or(METRIC_TIMEOUT_SECONDS, 24 * 60 * 60);
+
+    let metrics_timeout = Duration::from_secs(timeout_in_seconds);
+    let mask = MetricKindMask::ALL;
+
+    let builder = PrometheusBuilder::new()
+        .with_http_listener(listen_address)
+        .idle_timeout(mask, Some(metrics_timeout));
+
+    builder.install().expect("expect server to be startable");
 
     println!("Server started. Listening on {}.", listen_address);
-
-    tokio::spawn(handle_metric_updates(receiver));
-
-    ServerResult { builder }
 }
 
 async fn handle_metric_updates(receiver: Receiver<Vec<SnapshotGroupWithDetails>>) {

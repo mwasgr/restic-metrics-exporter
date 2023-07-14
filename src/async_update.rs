@@ -9,7 +9,7 @@ use crate::restic::{self, SnapshotGroupWithDetails};
 
 const UPDATE_INTERVALL_SECONDS: &str = "UPDATE_INTERVALL_SECONDS";
 
-pub async fn start_metric_updates(sender: Sender<Vec<SnapshotGroupWithDetails>>) {
+pub fn start_metric_updates(sender: Sender<Vec<SnapshotGroupWithDetails>>) {
     let seconds = get_environment_variable_or(UPDATE_INTERVALL_SECONDS, 14400);
     tokio::spawn(handle_metric_update_loop(seconds, sender));
 }
