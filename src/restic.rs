@@ -44,6 +44,7 @@ pub struct SnapshotGroup {
 pub struct SnapshotGroupWithDetails {
     pub group: SnapshotGroup,
     pub latest_time: i64,
+    pub earliest_time: i64,
     pub size: i64,
     pub count: usize,
 }
@@ -96,17 +97,28 @@ impl SnapshotGroup {
             "stats", "--json", "--host", &self.host, "--path", &self.path, "--mode", "raw-data",
         ])?;
         let stats: JsonSnapshotGroupStats = serde_json::from_str(&result)?;
-        let min_time: Result<i64, String> = match self.snapshots.iter().map(|s| s.time).min() {
-            Some(v) => Ok(v),
-            None => Err("Cannot get minimum".into()),
-        };
+        let min_time = Self::get_snapshot_time(&self.snapshots, true)?;
+        let max_time = Self::get_snapshot_time(&self.snapshots, false)?;
 
         Ok(SnapshotGroupWithDetails {
             group: self.clone(),
             count: self.snapshots.len(),
             size: stats.total_size,
-            latest_time: min_time?,
+            earliest_time: min_time,
+            latest_time: max_time,
         })
+    }
+
+    fn get_snapshot_time(snapshots: &Vec<Snapshot>, min: bool) -> Result<i64, Box<dyn Error>> {
+        let times = snapshots.iter().map(|s| s.time);
+        let result = match min {
+            true => times.min(),
+            false => times.max(),
+        };
+        match result {
+            Some(v) => Ok(v),
+            None => Err("Cannot get snapshot time value".into()),
+        }
     }
 }
 
