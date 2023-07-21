@@ -3,7 +3,6 @@ use metrics_exporter_prometheus::PrometheusBuilder;
 use metrics_util::MetricKindMask;
 use std::net::{IpAddr, Ipv4Addr};
 use std::{net::SocketAddr, sync::mpsc::Receiver, time::Duration};
-use tokio::task::JoinHandle;
 
 use crate::environment::get_environment_variable_or;
 use crate::restic::SnapshotGroupWithDetails;
@@ -22,8 +21,42 @@ const LISTEN_ADDRESS: &str = "LISTEN_ADDRESS";
 
 pub fn start(receiver: Receiver<Vec<SnapshotGroupWithDetails>>) {
     register_metrics();
+    update_metrics(vec![], "empty default state");
     handle_web_server();
     tokio::spawn(handle_metric_updates(receiver));
+}
+
+pub fn update_metrics(snapshot_details: Vec<SnapshotGroupWithDetails>, source: &str) {
+    let snapshout_group_count = register_gauge!(SNAPSHOT_GROUP_COUNT_METRIC);
+    let total_snapshot_size = register_gauge!(SNAPSHOT_SIZE_TOTAL_METRIC);
+    let total_snapshot_count = register_gauge!(SNAPSHOT_COUNT_TOTAL_METRIC);
+    let minimum_snapshot_time = register_gauge!(SNAPSHOT_TIME_MINIMUM_METRIC);
+    let maximum_snapshot_time = register_gauge!(SNAPSHOT_TIME_MAXIMUM_METRIC);
+
+    let time_values: Vec<i64> = snapshot_details.iter().map(|d| d.latest_time).collect();
+    let min_time = time_values.iter().min().unwrap_or(&0);
+    let max_time = time_values.iter().max().unwrap_or(&0);
+
+    snapshout_group_count.set(snapshot_details.len() as f64);
+    total_snapshot_size.set(0 as f64);
+    total_snapshot_count.set(0 as f64);
+    minimum_snapshot_time.set(*min_time as f64);
+    maximum_snapshot_time.set(*max_time as f64);
+
+    for group in snapshot_details {
+        total_snapshot_size.increment(group.size as f64);
+        total_snapshot_count.increment(group.count as f64);
+
+        let snapshot_time = register_gauge!(SNAPSHOT_TIME_METRIC, "host" => group.group.host.clone(), "path" => group.group.path.clone());
+        let snapshot_size = register_gauge!(SNAPSHOT_SIZE_METRIC, "host" => group.group.host.clone(), "path" => group.group.path.clone());
+        let snapshot_count = register_gauge!(SNAPSHOT_COUNT_METRIC, "host" => group.group.host.clone(), "path" => group.group.path.clone());
+
+        snapshot_time.set(group.latest_time as f64);
+        snapshot_size.set(group.size as f64);
+        snapshot_count.set(group.count as f64);
+    }
+
+    println!("Prometheus metrics updated from {}", source);
 }
 
 fn register_metrics() {
@@ -91,42 +124,6 @@ fn handle_web_server() {
 async fn handle_metric_updates(receiver: Receiver<Vec<SnapshotGroupWithDetails>>) {
     loop {
         let snapshot_details = receiver.recv().expect("metrics to be sent continously");
-
-        let snapshout_group_count = register_gauge!(SNAPSHOT_GROUP_COUNT_METRIC);
-        let total_snapshot_size = register_gauge!(SNAPSHOT_SIZE_TOTAL_METRIC);
-        let total_snapshot_count = register_gauge!(SNAPSHOT_COUNT_TOTAL_METRIC);
-        let minimum_snapshot_time = register_gauge!(SNAPSHOT_TIME_MINIMUM_METRIC);
-        let maximum_snapshot_time = register_gauge!(SNAPSHOT_TIME_MAXIMUM_METRIC);
-
-        let time_values: Vec<i64> = snapshot_details.iter().map(|d| d.latest_time).collect();
-        let min_time = time_values
-            .iter()
-            .min()
-            .expect("A minimum time value must exist");
-        let max_time = time_values
-            .iter()
-            .max()
-            .expect("A maximum time value must exist");
-
-        snapshout_group_count.set(snapshot_details.len() as f64);
-        total_snapshot_size.set(0 as f64);
-        total_snapshot_count.set(0 as f64);
-        minimum_snapshot_time.set(*min_time as f64);
-        maximum_snapshot_time.set(*max_time as f64);
-
-        for group in snapshot_details {
-            total_snapshot_size.increment(group.size as f64);
-            total_snapshot_count.increment(group.count as f64);
-
-            let snapshot_time = register_gauge!(SNAPSHOT_TIME_METRIC, "host" => group.group.host.clone(), "path" => group.group.path.clone());
-            let snapshot_size = register_gauge!(SNAPSHOT_SIZE_METRIC, "host" => group.group.host.clone(), "path" => group.group.path.clone());
-            let snapshot_count = register_gauge!(SNAPSHOT_COUNT_METRIC, "host" => group.group.host.clone(), "path" => group.group.path.clone());
-
-            snapshot_time.set(group.latest_time as f64);
-            snapshot_size.set(group.size as f64);
-            snapshot_count.set(group.count as f64);
-        }
-
-        println!("Prometheus metrics refreshed successfully.")
+        update_metrics(snapshot_details, "periodic update");
     }
 }

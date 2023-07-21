@@ -4,6 +4,7 @@ use tokio::time;
 
 mod async_update;
 mod environment;
+mod persistence;
 mod restic;
 mod server;
 
@@ -12,6 +13,8 @@ async fn main() {
     let (sender, receiver) = mpsc::channel();
 
     server::start(receiver);
+    persistence::load_and_update_metrics();
+
     async_update::start_metric_updates(sender);
 
     println!("restic metrics updater is up and running!");

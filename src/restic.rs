@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDateTime, ParseError, Utc};
+use chrono::{DateTime, ParseError, Utc};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -25,7 +25,7 @@ struct JsonSnapshotGroupStats {
     total_size: i64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Snapshot {
     pub time: i64,
     pub host: String,
@@ -33,14 +33,14 @@ pub struct Snapshot {
     pub id: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SnapshotGroup {
     pub host: String,
     pub path: String,
     pub snapshots: Vec<Snapshot>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SnapshotGroupWithDetails {
     pub group: SnapshotGroup,
     pub latest_time: i64,
@@ -52,7 +52,7 @@ impl fmt::Display for ResticError {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "Restic command '{:?}' failed with error message '{:?}'",
+            "Restic command '{}' failed with error message '{}'",
             self.command, self.error_message
         )
     }
@@ -89,7 +89,7 @@ impl GroupSnapshots for Vec<Snapshot> {
 impl SnapshotGroup {
     pub fn get_details(&self) -> Result<SnapshotGroupWithDetails, Box<dyn Error>> {
         println!(
-            "Getting snapshout group details for host \"{:?}\" and path \"{:?}\".",
+            "Getting snapshout group details for host \"{}\" and path \"{}\".",
             self.host, self.path
         );
         let result = run_restic(vec![
@@ -126,7 +126,7 @@ pub fn get_all_snapshots() -> Result<Vec<Snapshot>, Box<dyn Error>> {
 }
 
 fn run_restic(args: Vec<&str>) -> Result<String, Box<dyn Error>> {
-    println!("Executing restic command: {:?}", args);
+    println!("Executing restic command: {}", args.join(" "));
     let output = Command::new("restic").args(&args).output()?;
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     if !stderr.is_empty() {
@@ -142,7 +142,6 @@ fn run_restic(args: Vec<&str>) -> Result<String, Box<dyn Error>> {
 
 fn iso_to_milliseconds(iso_time: &str) -> Result<i64, ParseError> {
     let datetime: DateTime<Utc> = DateTime::parse_from_rfc3339(iso_time)?.into();
-    let naive_datetime: NaiveDateTime = datetime.naive_utc();
-    let timestamp_milliseconds: i64 = naive_datetime.timestamp_millis();
+    let timestamp_milliseconds: i64 = datetime.timestamp_millis();
     Ok(timestamp_milliseconds)
 }
